@@ -1,7 +1,7 @@
 #!/bin/bash
 
-IMAGE=docker-debuild
-NAME=docker-debuild
+IMAGE=mk-builder
+NAME=mk-builder
 
 # Check for existing containers
 EXISTING="$(docker ps -aq --filter=name=${NAME})"
