@@ -42,12 +42,21 @@ RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 43DDF224
 RUN echo 'deb http://deb.machinekit.io/debian jessie main' > \
         /etc/apt/sources.list.d/machinekit.list
 
+# make sure linux-libc-dev isn't installed from the MK repo; because
+# that kernel version doesn't match mainline kernels, the
+# `linux-libc-dev` package will have different versions across
+# architectures, and therefore conflict
+RUN echo "Package: linux-libc-dev\nPin: version 3.*\nPin-Priority:" \
+        "1001\n\nPackage: linux-libc-dev:armhf\nPin: " \
+        "version 3.*\nPin-Priority: 1001" > \
+        /etc/apt/preferences.d/10pin-linux-libc-dev
+
 # update Debian OS
 RUN apt-get update && \
     apt-get -y upgrade
 
 ###################################################################
-# Install basic packages
+# Install generic packages
 
 # Utilities
 RUN apt-get -y install \
@@ -75,19 +84,21 @@ RUN apt-get install -y \
 	libtool \
 	ccache \
 	autoconf \
-	quilt 
+	quilt
 
 # Add armhf foreign architecture
-RUN dpkg --add-architecture armhf && \
-        apt-get update
+RUN dpkg --add-architecture armhf
+RUN apt-get update
 
 # Cross-build toolchain and qemulator
+# For some reason, apt-get chokes without explicit `linux-libc-dev:armhf`
 RUN apt-get -y install \
         crossbuild-essential-armhf \
-        qemu-user-static
+        qemu-user-static \
+	linux-libc-dev:armhf
 
 ###################################################################
-# Install Machinekit depndencies
+# Install Machinekit dependency packages
 
 # Machinekit build-arch deps
 RUN apt-get install -y \
@@ -132,7 +143,9 @@ RUN apt-get install -y \
         tk8.6-dev:armhf \
         libboost-serialization-dev:armhf
 
-# Machinekit hairy dep:  libboost-python-dev:armhf
+# libboost-python-dev:armhf is a problematic Machinekit build dep that
+# wants to reinstall the matching build-arch pkgs
+# python{2.7,}{-minimal,-dev,}:armhf
 #
 # Unproblematic deps of libboost-python-dev:armhf
 RUN apt-get install -y \
@@ -142,24 +155,35 @@ RUN apt-get install -y \
 	libpython-dev:armhf \
         libpython-stdlib:armhf \
         libboost-python1.55.0:armhf
-# Problematic deps want to reinstall the matching build-arch pkgs:
-# python{2.7,}-minimal:armhf python{2.7,}:armhf  python{2.7,}-dev:armhf
-#
-# Force-install libboost-python-dev:armhf
+
+# The package itself needs to be force-installed, but that breaks apt,
+# so only install it at the end.
+
+# Download packages and install script to force-install
+# libboost-python-dev:armhf
 RUN mkdir /tmp/pkg-downloads && cd /tmp/pkg-downloads && \
-        apt-get download \
-            libboost-python1.55-dev:armhf libboost-python-dev:armhf && \
-        dpkg -i --force-depends *.deb
+    apt-get download \
+        libboost-python1.55-dev:armhf libboost-python-dev:armhf
+ADD force-install.sh /usr/bin/force-install
 
 # Machinekit host-arch deps to skip:
 # - python-zmq:armhf:  wants to reinstall python:armhf
 
-# Now running `debian/configure -prxt 8.6 && dpkg-buildpackage -uc -us
-# -a armhf -B` should show the following missing deps:
+# After `force-install -i`, force-adding libboost-python-dev:armhf,
+# running `debian/configure -prxt 8.6 && dpkg-buildpackage -uc -us -a
+# armhf -B` should show the following missing deps:
 #
 # dpkg-checkbuilddeps: Unmet build dependencies: python (>= 2.6.6-3~)
 #    python-dev (>= 2.6.6-3~) cython (>= 0.19) python-tk python-zmq (>=
 #    14.0.1) python-protobuf (>= 2.4.1) python-simplejson libtk-img
+
+###################################################################
+# Install extra packages
+
+# add packagecloud cli and prune utility
+RUN	apt-get install -y python-restkit rubygems
+RUN	gem install package_cloud --no-rdoc --no-ri
+ADD	PackagecloudIo.py prune.py /usr/bin/
 
 ###########################################
 # Set up environment
@@ -186,23 +210,3 @@ RUN sed -i /etc/bash.bashrc \
 # Install and configure sudo, passwordless for everyone
 RUN apt-get -y install sudo
 RUN echo "ALL	ALL=(ALL:ALL) NOPASSWD: ALL" >> /etc/sudoers
-###################################################################
-# Install extra packages
-
-# add packagecloud cli and prune utility
-RUN	apt-get install -y python-restkit rubygems
-RUN	gem install package_cloud --no-rdoc --no-ri
-ADD	PackagecloudIo.py prune.py /usr/bin/
-
-##################################################################
-
-# # add machinekit.io repository
-# RUN echo "deb http://deb.machinekit.io/debian ${SUITE} main" \
-#          > ${ROOTFS}/etc/apt/sources.list.d/machinekit.list
-# # linux-libc-dev=4.1.19-rt22mah-2 breaks cross-compiler installation
-# RUN echo "Package: linux-libc-dev\nPin: version 4.1*\nPin-Priority: -10" \
-#     > /etc/apt/preferences.d/01pin-linux-libc-dev.pref
-# RUN apt-key adv --keyserver hkp://keys.gnupg.net \
-#         --recv-key 43DDF224
-# RUN apt-get update
-
