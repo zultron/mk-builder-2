@@ -71,7 +71,8 @@ RUN apt-get -y install \
 	xauth \
 	python-sphinx \
 	wget \
-        sudo
+        sudo \
+	lftp
 
 # Dev tools
 RUN apt-get install -y \
