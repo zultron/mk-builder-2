@@ -98,6 +98,11 @@ RUN apt-get -y install \
         qemu-user-static \
 	linux-libc-dev:armhf
 
+# Add packagecloud cli and prune utility
+RUN	apt-get install -y python-restkit rubygems
+RUN	gem install package_cloud --no-rdoc --no-ri
+ADD	PackagecloudIo.py prune.py /usr/bin/
+
 ###################################################################
 # Install Machinekit dependency packages
 
@@ -179,14 +184,6 @@ RUN force-install -i
 # dpkg-checkbuilddeps: Unmet build dependencies: python (>= 2.6.6-3~)
 #    python-dev (>= 2.6.6-3~) cython (>= 0.19) python-tk python-zmq (>=
 #    14.0.1) python-protobuf (>= 2.4.1) python-simplejson libtk-img
-
-###################################################################
-# Install extra packages
-
-# add packagecloud cli and prune utility
-RUN	apt-get install -y python-restkit rubygems
-RUN	gem install package_cloud --no-rdoc --no-ri
-ADD	PackagecloudIo.py prune.py /usr/bin/
 
 ###########################################
 # Set up environment
