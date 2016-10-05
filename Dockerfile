@@ -70,7 +70,8 @@ RUN apt-get -y install \
 	xvfb \
 	xauth \
 	python-sphinx \
-	wget
+	wget \
+        sudo
 
 # Dev tools
 RUN apt-get install -y \
@@ -159,12 +160,14 @@ RUN apt-get install -y \
 # The package itself needs to be force-installed, but that breaks apt,
 # so only install it at the end.
 
-# Download packages and install script to force-install
-# libboost-python-dev:armhf
-RUN mkdir /tmp/pkg-downloads && cd /tmp/pkg-downloads && \
-    apt-get download \
-        libboost-python1.55-dev:armhf libboost-python-dev:armhf
+# Download packages and force-install libboost-python-dev:armhf; after
+# this, `apt-get` will be broken; unbreak by removing problem packages
+# again with `force-install -r`
+RUN mkdir /tmp/pkg-downloads && \
+    cd /tmp/pkg-downloads && \
+    apt-get download libboost-python1.55-dev:armhf libboost-python-dev:armhf
 ADD force-install.sh /usr/bin/force-install
+RUN force-install -i
 
 # Machinekit host-arch deps to skip:
 # - python-zmq:armhf:  wants to reinstall python:armhf
@@ -207,6 +210,5 @@ RUN sed -i /etc/bash.bashrc \
     -e 's/^PS1=.*/PS1="\\h:\\W\\$ "/' \
     -e '$a alias ls="ls -aFs"'
 
-# Install and configure sudo, passwordless for everyone
-RUN apt-get -y install sudo
+# Configure sudo, passwordless for everyone
 RUN echo "ALL	ALL=(ALL:ALL) NOPASSWD: ALL" >> /etc/sudoers
