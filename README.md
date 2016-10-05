@@ -43,3 +43,23 @@ sufficient to cross-build `armhf` binary packages.  It is expected
 that architecture-independent packages will be built in the native
 build host environment; this Docker image does not (and cannot) have
 the correct dependency packages to do that.
+
+## TODO
+
+- Test build viability
+  - Currently, RIP builds are known to pass regression tests (the
+    built source tree must be copied to an ARM host with Machinekit
+    run-time dependencies installed to test).
+  - Packages have not been tested.  Their viability must be determined
+    before taking this project further.
+- Wheezy builds
+  - Using this method to build Wheezy packages is expected to be a
+    much greater challenge than Jessie, since `Multi-Arch:` support is
+    even less mature.
+- Other achitectures:  `i386` and native `amd64` builds
+  - Native builds should be trivial.
+  - This same method should be easily extended to build
+    `i386`-architecture packages.
+  - Raspberry Pi builds could be challenging, since package versions
+    between Raspbian and upstream Jessie may not match.  This method
+    may break down in that case.
