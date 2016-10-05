@@ -1,14 +1,17 @@
 FROM debian:jessie
 MAINTAINER John Morris <john@zultron.com>
 
+###################################################################
+# Generic apt configuration
+
 ENV TERM dumb
 
 # apt config:  silence warnings and set defaults
 ENV DEBIAN_FRONTEND noninteractive
 ENV DEBCONF_NONINTERACTIVE_SEEN true
-ENV LC_ALL C 
-ENV LANGUAGE C
-ENV LANG C
+ENV LC_ALL C.UTF-8
+ENV LANGUAGE C.UTF-8
+ENV LANG C.UTF-8
 
 # turn off recommends on container OS and proot OS
 RUN echo 'APT::Install-Recommends "0";\nAPT::Install-Suggests "0";' > \
@@ -20,47 +23,178 @@ RUN echo 'APT::Install-Recommends "0";\nAPT::Install-Suggests "0";' > \
 # use stable Debian mirror
 RUN sed -i /etc/apt/sources.list -e 's/httpredir.debian.org/ftp.debian.org/'
 
+###################################################################
+# Configure 3rd-party apt repos and update the OS
+
+# install apt-transport-https for packagecloud.io
+RUN apt-get update && \
+    apt-get install -y apt-transport-https ca-certificates
+
 # add emdebian package archive
 ADD emdebian-toolchain-archive.key /tmp/
 RUN apt-key add /tmp/emdebian-toolchain-archive.key && \
-    echo "deb http://emdebian.org/tools/debian/ jessie main" >> \
+    echo "deb http://emdebian.org/tools/debian/ jessie main" > \
         /etc/apt/sources.list.d/emdebian.list
 
-# update Debian root
-RUN	apt-get update && \
-	apt-get -y upgrade
+# add Machinekit package archive
 
-# install required dependencies
-RUN	apt-get -y install \
-	    debootstrap \
-	    multistrap \
-	    locales \
-	    rubygems \
-	    git \
-	    bzip2 \
-	    ca-certificates \
-	    wget
-#	    proot \
+RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 43DDF224
+RUN echo 'deb http://deb.machinekit.io/debian jessie main' > \
+        /etc/apt/sources.list.d/machinekit.list
 
-# patch debootstrap as /proc cannot be mounted under proot
-RUN	sed -i 's/in_target mount -t proc/#in_target mount -t proc/g' \
-	    /usr/share/debootstrap/functions
+# update Debian OS
+RUN apt-get update && \
+    apt-get -y upgrade
 
-# install native cross-compiler and qemulator
+###################################################################
+# Install basic packages
+
+# Utilities
+RUN apt-get -y install \
+	locales \
+	git \
+	bzip2 \
+	sharutils \
+	net-tools \
+	time \
+	help2man \
+	xvfb \
+	xauth \
+	python-sphinx \
+	wget
+
+# Dev tools
+RUN apt-get install -y \
+	build-essential \
+	devscripts \
+	fakeroot \
+	equivs \
+	lsb-release \
+	less \
+	python-debian \
+	libtool \
+	ccache \
+	autoconf \
+	quilt 
+
+# Add armhf foreign architecture
 RUN dpkg --add-architecture armhf && \
-    apt-get update && \
-    apt-get -y install \
+        apt-get update
+
+# Cross-build toolchain and qemulator
+RUN apt-get -y install \
         crossbuild-essential-armhf \
         qemu-user-static
 
-# add proot-helper script
-#ADD proot-helper /bin/
+###################################################################
+# Install Machinekit depndencies
+
+# Machinekit build-arch deps
+RUN apt-get install -y \
+        automake \
+	cython \
+	psmisc \
+	python-tk \
+	kmod \
+	python-setuptools \
+	uuid-runtime \
+	protobuf-compiler \
+	python-protobuf \
+	python-simplejson \
+	libtk-img \
+	python-pyftpdlib
+
+# Machinekit host-arch deps
+RUN apt-get install -y \
+        libgl1-mesa-dev:armhf \
+        libglu1-mesa-dev:armhf \
+        libgtk2.0-dev:armhf \
+        libmodbus-dev:armhf \
+        libncurses-dev:armhf \
+        libreadline-dev:armhf \
+        libusb-1.0-0-dev:armhf \
+        libxmu-dev:armhf \
+        libxmu-headers:armhf \
+        libxaw7-dev:armhf \
+        libzmq3-dev:armhf \
+        libczmq-dev:armhf \
+        libjansson-dev:armhf \
+        libwebsockets-dev:armhf \
+        liburiparser-dev:armhf \
+        libssl-dev:armhf \
+        uuid-dev:armhf \
+        libavahi-client-dev:armhf \
+        libprotobuf-dev:armhf \
+        libprotoc-dev:armhf \
+        libboost-thread-dev:armhf \
+        libxenomai-dev:armhf \
+        tcl8.6-dev:armhf \
+        tk8.6-dev:armhf \
+        libboost-serialization-dev:armhf
+
+# Machinekit hairy dep:  libboost-python-dev:armhf
+#
+# Unproblematic deps of libboost-python-dev:armhf
+RUN apt-get install -y \
+        libpython2.7:armhf \
+        libpython2.7-dev:armhf \
+        libpython2.7-minimal:armhf \
+	libpython-dev:armhf \
+        libpython-stdlib:armhf \
+        libboost-python1.55.0:armhf
+# Problematic deps want to reinstall the matching build-arch pkgs:
+# python{2.7,}-minimal:armhf python{2.7,}:armhf  python{2.7,}-dev:armhf
+#
+# Force-install libboost-python-dev:armhf
+RUN mkdir /tmp/pkg-downloads && cd /tmp/pkg-downloads && \
+        apt-get download \
+            libboost-python1.55-dev:armhf libboost-python-dev:armhf && \
+        dpkg -i --force-depends *.deb
+
+# Machinekit host-arch deps to skip:
+# - python-zmq:armhf:  wants to reinstall python:armhf
+
+# Now running `debian/configure -prxt 8.6 && dpkg-buildpackage -uc -us
+# -a armhf -B` should show the following missing deps:
+#
+# dpkg-checkbuilddeps: Unmet build dependencies: python (>= 2.6.6-3~)
+#    python-dev (>= 2.6.6-3~) cython (>= 0.19) python-tk python-zmq (>=
+#    14.0.1) python-protobuf (>= 2.4.1) python-simplejson libtk-img
+
+###########################################
+# Set up environment
+#
+# Customize the following to match the user's environment
+
+# Set up user ID inside container to match your ID
+ENV USER jman
+ENV UID 1000
+ENV GID 1000
+ENV HOME /home/${USER}
+ENV SHELL /bin/bash
+ENV PATH /usr/lib/ccache:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin
+RUN echo "${USER}:x:${UID}:${GID}::${HOME}:${SHELL}" >> /etc/passwd
+RUN echo "${USER}:x:${GID}:" >> /etc/group
+
+# Customize the run environment to your taste
+# - bash prompt
+# - 'ls' alias
+RUN sed -i /etc/bash.bashrc \
+    -e 's/^PS1=.*/PS1="\\h:\\W\\$ "/' \
+    -e '$a alias ls="ls -aFs"'
+
+# Install and configure sudo, passwordless for everyone
+RUN apt-get -y install sudo
+RUN echo "ALL	ALL=(ALL:ALL) NOPASSWD: ALL" >> /etc/sudoers
+###################################################################
+# Install extra packages
 
 # add packagecloud cli and prune utility
+RUN	apt-get install -y python-restkit rubygems
 RUN	gem install package_cloud --no-rdoc --no-ri
-RUN	apt-get install -y python-restkit
 ADD	PackagecloudIo.py prune.py /usr/bin/
 
+##################################################################
 
 # # add machinekit.io repository
 # RUN echo "deb http://deb.machinekit.io/debian ${SUITE} main" \
@@ -72,106 +206,3 @@ ADD	PackagecloudIo.py prune.py /usr/bin/
 #         --recv-key 43DDF224
 # RUN apt-get update
 
-# # add deps
-# RUN apt-get install -y \
-#     autoconf automake libboost-python-dev libgl1-mesa-dev libglu1-mesa-dev \
-#     libgtk2.0-dev libmodbus-dev libncurses-dev libreadline-dev \
-#     libusb-1.0-0-dev libxmu-dev libxmu-headers python python-dev cython \
-#     dh-python pkg-config psmisc python-tk libxaw7-dev \
-#     libboost-serialization-dev libzmq3-dev libczmq-dev libjansson-dev \
-#     libwebsockets-dev python-zmq procps kmod liburiparser-dev libssl-dev \
-#     python-setuptools uuid-dev uuid-runtime libavahi-client-dev \
-#     libprotobuf-dev protobuf-compiler python-protobuf libprotoc-dev \
-#     python-simplejson libtk-img libboost-thread-dev python-pyftpdlib \
-#     tcl8.6-dev tk8.6-dev
-
-# # add armhf deps
-# RUN apt-get install -y \
-#     libgl1-mesa-dev:armhf libglu1-mesa-dev:armhf libgtk2.0-dev:armhf \
-#     libzmq3-dev:armhf libczmq-dev:armhf
-
-# Need Multi-Arch libpgm-5.1-0; compile from scratch?
-# Dep of libzmq3
-# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=674610
-
-    # autoconf automake libboost-python-dev \
-    #  libmodbus-dev libncurses-dev libreadline-dev \
-    # libusb-1.0-0-dev libxmu-dev libxmu-headers python python-dev cython \
-    # dh-python pkg-config psmisc python-tk libxaw7-dev \
-    # libboost-serialization-dev  libjansson-dev \
-    # libwebsockets-dev python-zmq procps kmod liburiparser-dev libssl-dev \
-    # python-setuptools uuid-dev uuid-runtime libavahi-client-dev \
-    # libprotobuf-dev protobuf-compiler python-protobuf libprotoc-dev \
-    # python-simplejson libtk-img libboost-thread-dev python-pyftpdlib \
-    # tcl8.6-dev tk8.6-dev
-
-#apt-get -y  -o Apt::Architecture=armhf -o Dir::Etc::TrustedParts=/opt/rootfs/etc/apt/trusted.gpg.d -o Dir::Etc::Trusted=/opt/rootfs/etc/apt/trusted.gpg.d/trusted.gpg -o Apt::Get::Download-Only=true -o Apt::Install-Recommends=false -o Dir=/opt/rootfs/ -o Dir::Etc=/opt/rootfs/etc/apt/ -o Dir::Etc::Parts=/opt/rootfs/etc/apt/apt.conf.d/ -o Dir::Etc::PreferencesParts=/opt/rootfs/etc/apt/preferences.d/ -o APT::Default-Release=* -o Dir::State=/opt/rootfs/var/lib/apt/ -o Dir::State::Status=/opt/rootfs/var/lib/dpkg/status -o Dir::Cache=/opt/rootfs/var/cache/apt/ install  debian-archive-keyring libgl1-mesa-dev libglu1-mesa-dev libgtk2.0-dev libzmq3-dev
-
-# autoconf
-# automake
-# avahi-daemon
-# build-essential
-# bwidget
-# debhelper
-# dh-python
-# kmod
-# libavahi-client-dev
-# libboost-python-dev
-# libboost-serialization-dev
-# libboost-thread-dev
-# libczmq-dev
-# libgl1-mesa-dev
-# libglib2.0-dev
-# libglu1-mesa-dev
-# libgtk2.0-dev
-# libjansson-dev
-# libmodbus-dev
-# libncurses-dev
-# libprotobuf-dev
-# libprotoc-dev
-# libreadline-gplv2-dev #libreadline-dev
-# libsodium-dev
-# libssl-dev
-# libtk-img
-# libtool
-# libudev-dev
-# liburiparser-dev
-# libusb-1.0-0-dev
-# libwebsockets-dev
-# libxaw7-dev
-# libxmu-dev
-# libxmu-headers
-# libzmq3-dev
-# openssl
-# pkg-config
-# procps
-# protobuf-compiler
-# psmisc
-# python
-# python-avahi
-# python-dev
-# python-netifaces
-# python-nose
-# python-protobuf
-# python-pyftpdlib
-# python-setuptools
-# python-simplejson
-# python-support
-# python-tk
-# python-zmq
-# uuid-dev
-# uuid-runtime
-# libxenomai-dev
-
-
-# ln -s ${ROOTFS}/lib/arm-linux-gnueabihf /lib/
-# ln -s ${ROOTFS}/usr/lib/arm-linux-gnueabihf /usr/lib/
-# ln -s ${ROOTFS}/usr/include/arm-linux-gnueabihf /usr/include/
-
-
-# sudo apt-get install libglu1-mesa-dev:armhf libgtk2.0-dev:armhf libmodbus-dev:armhf libusb-1.0-0-dev:armhf libxmu-dev:armhf libxaw7-dev:armhf libboost-serialization-dev:armhf libzmq3-dev:armhf libczmq-dev:armhf libjansson-dev:armhf libwebsockets-dev:armhf liburiparser-dev:armhf libssl-dev:armhf uuid-dev:armhf libavahi-client-dev:armhf libprotobuf-dev:armhf libprotoc-dev:armhf libxenomai-dev:armhf libgl1-mesa-dev:armhf libtk-img:armhf libboost-thread-dev:armhf tcl8.6-dev:armhf tk8.6-dev:armhf
-
-
-# # Python isn't multi-arch
-# # https://wiki.debian.org/Python/MultiArch
-# libboost-python-dev python:armhf python-dev:armhf cython:armhf python-tk:armhf python-zmq:armhf python-protobuf:armhf python-simplejson:armhf
