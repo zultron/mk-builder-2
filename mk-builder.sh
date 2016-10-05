@@ -1,7 +1,16 @@
-#!/bin/bash
+#!/bin/bash -e
 
 IMAGE=mk-builder
 NAME=mk-builder
+
+# Build: If called with args `mk-builder build [...]`, then build the image
+# instead of running it, and add arguments to the `docker build` command
+if test "$1" = "build"; then
+    shift
+    cd $(dirname $0)
+    docker build -t ${IMAGE} "$@" .
+    exit
+fi
 
 # Check for existing containers
 EXISTING="$(docker ps -aq --filter=name=${NAME})"
