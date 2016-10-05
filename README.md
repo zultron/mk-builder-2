@@ -3,6 +3,9 @@
 This builds a Docker image with the needed dependencies to cross-build
 Machinekit Debian packages for `armhf` architecture.
 
+It is suitable for use either interactively on a workstation or in
+automated build environments like Travis CI.
+
 Right now, this build method is still under evaluation.  While it does
 produce packages, they have not been tested.
 
@@ -10,6 +13,9 @@ produce packages, they have not been tested.
 
 - Build the Docker image
   - Clone this repository and `cd` into the directory
+  - Customize the last section of the `Dockerfile`, if desired.  (For
+    interactive use, it may be practical to set the `UID` and `GID` to
+    match those outside the container.)
   - Run `docker build -t mk-builder .`
 - Start the Docker image
   - `cd` to the root of the Machinekit source tree
