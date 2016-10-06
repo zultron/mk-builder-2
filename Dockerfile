@@ -88,6 +88,11 @@ RUN apt-get install -y \
 	autoconf \
 	quilt
 
+# Add packagecloud cli and prune utility
+RUN	apt-get install -y python-restkit rubygems
+RUN	gem install package_cloud --no-rdoc --no-ri
+ADD	PackagecloudIo.py prune.py /usr/bin/
+
 # Add armhf foreign architecture
 RUN dpkg --add-architecture armhf
 RUN apt-get update
@@ -98,11 +103,6 @@ RUN apt-get -y install \
         crossbuild-essential-armhf \
         qemu-user-static \
 	linux-libc-dev:armhf
-
-# Add packagecloud cli and prune utility
-RUN	apt-get install -y python-restkit rubygems
-RUN	gem install package_cloud --no-rdoc --no-ri
-ADD	PackagecloudIo.py prune.py /usr/bin/
 
 ###################################################################
 # Install Machinekit dependency packages
