@@ -192,7 +192,7 @@ RUN force-install -i
 # Customize the following to match the user's environment
 
 # Set up user ID inside container to match your ID
-ENV USER builder
+ENV USER travis
 ENV UID 1000
 ENV GID 1000
 ENV HOME /home/${USER}
